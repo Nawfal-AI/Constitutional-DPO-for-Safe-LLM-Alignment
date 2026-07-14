@@ -1,7 +1,7 @@
 # LLM Post-Training Stack: Constitutional DPO & Production Observability
 
 ![Kaggle](https://img.shields.io/badge/Kaggle-T4_GPU-blue)
-![Anthropic](https://img.shields.io/badge/Target-Role%3A%20Post--Training%20Engineer-red)
+
 
 ## 🎯 Why This Project Exists
 This repository is a **simulated Production Post-Training pipeline**, specifically architected to mirror the requirements of **Anthropic's Production Model Post-Training** role.
