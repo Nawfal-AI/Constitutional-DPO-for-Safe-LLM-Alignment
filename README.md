@@ -1,65 +1,81 @@
-# LLM Post-Training Stack: Constitutional DPO & Production Observability
+# DPO Safety Alignment: Preference-Based Fine-Tuning on a Single GPU
 
 ![Kaggle](https://img.shields.io/badge/Kaggle-T4_GPU-blue)
 
+A small end-to-end pipeline for aligning an open-weight LLM (Phi-3-mini) toward
+safer responses using **Direct Preference Optimization (DPO)** on the
+[PKU-SafeRLHF](https://huggingface.co/datasets/PKU-Alignment/PKU-SafeRLHF)
+preference dataset, built to run within a single 16GB T4 GPU (e.g. free-tier
+Kaggle).
 
-## 🎯 Why This Project Exists
-This repository is a **simulated Production Post-Training pipeline**, specifically architected to mirror the requirements of **Anthropic's Production Model Post-Training** role.
+## What this is (and isn't)
 
-It demonstrates a deep understanding of:
-- **Constitutional AI / RLHF** (via DPO on the PKU-SafeRLHF dataset)
-- **High-Performance Computing** (4-bit QLoRA, Flash Attention, Gradient Checkpointing)
-- **Distributed Simulation** (Gradient Accumulation simulating global batch sizes across multiple nodes)
-- **On-Call Incident Response** (Custom Callback that pauses training on NaN/Loss spikes)
-- **Production Observability** (Full WandB instrumentation with gradient norms and KL-divergence)
+This project trains a model on human-labeled *safe vs. unsafe* response pairs
+using DPO. It is **not** an implementation of Constitutional AI — Constitutional
+AI specifically refers to a method where a model critiques and revises its own
+outputs against a written constitution, and those self-generated
+critique/revision pairs (rather than only human labels) are used to train a
+preference or reward model. This project is more limited in scope: standard
+DPO on an existing human-preference dataset. I'm calling it what it is rather
+than what it isn't.
 
-## 📂 Repository Structure
+## Repository structure
 
-    ├── train.py # Main DPO training with safety alignment
-    ├── evaluate.py # Toxicity & Reasoning evaluation harness
-    └── requirements.txt # Exact dependencies for Kaggle T4 environment
+```
+├── train.py           # DPO training: 4-bit QLoRA + health-monitoring callback + data validation
+├── evaluate.py         # Compares base vs. aligned model on toxicity + a reasoning sanity check
+├── requirements.txt    # Dependencies
+└── results/            # Populated after you run train.py / evaluate.py (see below)
+```
 
+## What the code actually does
 
-## 🧠 How It Simulates the "Missing Skills" (For Recruiters)
-| Anthropic JD Requirement | Implementation in this Code |
-| :--- | :--- |
-| *Distributed Systems / Multi-GPU* | Simulated via `gradient_accumulation_steps=8` to replicate a batch size across 8 virtual nodes. |
-| *High-Performance Computing* | Leveraged `bitsandbytes` 4-bit quantization and `flash_attention_2` to fit a 3.8B model into 16GB VRAM. |
-| *Debugging complex issues* | The `ProductionIncidentCallback` acts as an on-call engineer, automatically halting and checkpointing on NaNs. |
-| *Constitutional AI / Safety* | Trained DPO to choose "safe" responses over "harmful" ones using the PKU-SafeRLHF dataset. |
-| *Data Curation* | Included a `DataValidator` class to filter empty/short samples, mirroring my EagleSFT pipeline. |
+| Component | What it does | What it doesn't do |
+|---|---|---|
+| `TrainingHealthCallback` | Watches loss each logging step; on NaN/Inf/spike, saves an emergency checkpoint and halts the run | It's a single-process callback, not a distributed monitoring/alerting system |
+| `DataValidator` | Drops empty, too-short, or duplicate (chosen==rejected) preference pairs before training | It's a length/dedup filter, not a learned quality model |
+| 4-bit QLoRA | Fits a 3.8B-parameter model's fine-tuning into 16GB VRAM | Full fine-tuning of larger models still needs more/bigger GPUs |
+| `gradient_accumulation_steps` | Increases the *effective batch size* on a single GPU by accumulating gradients before stepping the optimizer | This is **not** multi-GPU or multi-node training — real distributed training would need something like `accelerate launch` across multiple devices with DeepSpeed/FSDP, which this repo doesn't implement |
+| Attention implementation | Auto-detects GPU compute capability and uses `sdpa` on T4 (`flash_attention_2` requires Ampere+ and will not run on a T4) | — |
 
-## 🚀 How to Run on Kaggle
-1. **Create a Kaggle Notebook** with GPU T4x2 accelerator enabled.
-2. **Clone this repo** into the `/kaggle/working/` directory.
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
+## How to run
 
-4. Train the model:
-    python train.py --wandb_key YOUR_KEY --sample_size 5000
+### Kaggle (recommended free option)
+1. New Kaggle Notebook, accelerator: **GPU T4 x2**, internet on.
+2. Upload `train.py`, `evaluate.py`, `requirements.txt`.
+3. `pip install -r requirements.txt`
+4. `python train.py --sample_size 3000` (add `--wandb_key YOUR_KEY` for live logging)
+5. `python evaluate.py`
 
-5. Evaluate safety:
-    python evaluate.py
+### Any single-GPU machine
+Same steps locally, given a CUDA GPU with ≥16GB VRAM and the deps installed.
 
-## Expected Results
-Toxicity Drop: The aligned model should show a significant decrease in toxicity scores (e.g., from 0.8 to 0.2) on harmful prompts.
+### Arguments (`train.py`)
+| Argument | Default | Description |
+|---|---|---|
+| `--model_name` | `microsoft/Phi-3-mini-4k-instruct` | Base model |
+| `--sample_size` | `5000` | Number of preference pairs to train on |
+| `--effective_batch_size` | `16` | Target effective batch size (via grad accumulation) |
+| `--per_device_train_batch_size` | `2` | Micro-batch size per step |
+| `--wandb_key` | `None` | Enables W&B logging if set |
 
-Reasoning Retention: The aligned model should still produce coherent completions (proving safety didn't break intelligence).
+## Results
 
+Results are written to `results/train_metrics.json` and
+`results/eval_results.json` after each script runs — real numbers from an
+actual run, not hardcoded here. See [`RESULTS.md`](RESULTS.md) for the most
+recent run I did, including caveats on what the toxicity metric does and
+doesn't show.
 
----
+## Known limitations
 
-### 🏁 How to Upload and Use this on GitHub
-1. Create a new repository on GitHub called `llm-post-training-stack`.
-2. Copy the 4 blocks of code above into their respective files locally.
-3. Run `git add . && git commit -m "Initial commit: Anthropic Post-Training Sim" && git push`.
-4. **Crucially**, on Kaggle, you don't need to clone the repo. Just upload `train.py` and `requirements.txt` to a new Kaggle Notebook, run the pip install, and execute `python train.py`. It will automatically download the model and dataset.
+- **Toxicity scoring is a proxy, not a safety guarantee.** The classifier used
+  in `evaluate.py` is a general-purpose toxicity model, not a substitute for
+  human review or structured adversarial red-teaming. 5 illustrative prompts
+  is not a benchmark.
+- **Single-GPU only.** No multi-node/distributed training is implemented here.
+- **1 epoch, small sample.** This is sized to run in ~25–30 minutes on a free
+  Kaggle T4, not to produce a maximally-aligned model.
 
----
-
-### 💡 Pro-Tip for the Application
-When you submit your CV, put this GitHub link right at the top of your Master's projects. In your cover letter, write:
-> *"I built a production-grade post-training stack (GitHub link) that implements DPO for Constitutional AI, 4-bit HPC optimization, and an automated incident debugger—simulating Anthropic's exact engineering culture of reliability and safety."*
-
-This proves you didn't just *read* about the missing skills; you **wrote code** to simulate them under strict hardware constraints. Good luck! You are now a top-tier candidate for Job-2.
+See [`NOTES.md`](NOTES.md) for a more detailed engineering writeup — what I'd
+change with more compute/time, and what I learned running this.
