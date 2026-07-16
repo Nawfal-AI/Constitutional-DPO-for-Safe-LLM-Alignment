@@ -22,10 +22,12 @@ than what it isn't.
 ## Repository structure
 
 ```
-├── train.py           # DPO training: 4-bit QLoRA + health-monitoring callback + data validation
-├── evaluate.py         # Compares base vs. aligned model on toxicity + a reasoning sanity check
-├── requirements.txt    # Dependencies
-└── results/            # Populated after you run train.py / evaluate.py (see below)
+├── train.py             # DPO training: 4-bit QLoRA + health-monitoring callback + data validation
+├── eval_harness.py       # Compares base vs. aligned model on toxicity + a reasoning sanity check
+│                          # (named eval_harness.py, not evaluate.py, deliberately — a file named
+│                          #  evaluate.py shadows the pip `evaluate` package on import and crashes)
+├── requirements.txt      # Dependencies
+└── results/              # Populated after you run train.py / eval_harness.py (see below)
 ```
 
 ## What the code actually does
@@ -42,10 +44,14 @@ than what it isn't.
 
 ### Kaggle (recommended free option)
 1. New Kaggle Notebook, accelerator: **GPU T4 x2**, internet on.
-2. Upload `train.py`, `evaluate.py`, `requirements.txt`.
+2. Upload `train.py`, `eval_harness.py`, `requirements.txt`.
 3. `pip install -r requirements.txt`
-4. `python train.py --sample_size 3000` (add `--wandb_key YOUR_KEY` for live logging)
-5. `python evaluate.py`
+4. `python train.py --sample_size 3000` (add `--wandb_key YOUR_KEY` for live logging).
+   On a single T4 this takes **several hours** (~5h for 3,000 samples/1 epoch in
+   practice — DPO runs 3-4x the forward/backward compute of ordinary fine-tuning
+   per step). Use `--sample_size 1000 --disable_gradient_checkpointing` for a
+   much faster (~1-1.5h) iteration run.
+5. `python eval_harness.py`
 
 ### Any single-GPU machine
 Same steps locally, given a CUDA GPU with ≥16GB VRAM and the deps installed.
@@ -70,7 +76,7 @@ doesn't show.
 ## Known limitations
 
 - **Toxicity scoring is a proxy, not a safety guarantee.** The classifier used
-  in `evaluate.py` is a general-purpose toxicity model, not a substitute for
+  in `eval_harness.py` is a general-purpose toxicity model, not a substitute for
   human review or structured adversarial red-teaming. 5 illustrative prompts
   is not a benchmark.
 - **Single-GPU only.** No multi-node/distributed training is implemented here.

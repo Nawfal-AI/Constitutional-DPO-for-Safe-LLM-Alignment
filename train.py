@@ -93,6 +93,13 @@ def main():
         help="per_device_train_batch_size * gradient_accumulation_steps",
     )
     parser.add_argument("--per_device_train_batch_size", type=int, default=2)
+    parser.add_argument(
+        "--disable_gradient_checkpointing",
+        action="store_true",
+        help="Trade VRAM for speed. With LoRA (~9M trainable params on a 4-bit "
+        "base model) there's usually enough headroom on a 16GB T4 to disable "
+        "this and get a meaningful speedup.",
+    )
     # parse_known_args (not parse_args) so this doesn't crash when run inside
     # a notebook kernel (Colab/Jupyter inject their own "-f kernel.json" arg
     # that argparse doesn't recognize).
@@ -194,9 +201,9 @@ def main():
         warmup_steps=100,
         num_train_epochs=1,
         logging_steps=10,
-        save_steps=200,
+        save_steps=25,
         save_total_limit=2,
-        gradient_checkpointing=True,
+        gradient_checkpointing=not args.disable_gradient_checkpointing,
         bf16=torch.cuda.is_available(),
         max_length=512,
         remove_unused_columns=False,
